@@ -1,0 +1,9 @@
+{
+  "name": "spike-bench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Spike Bench, a patch-clamp workbench. Pure deterministic Hodgkin-Huxley engine plus a browser shell.",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}
