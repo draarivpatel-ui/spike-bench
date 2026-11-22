@@ -1,9 +1,10 @@
 {
   "name": "spike-bench",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Spike Bench, a patch-clamp workbench. Pure deterministic Hodgkin-Huxley engine plus a browser shell.",
+  "description": "Spike Bench, a computational neuroscience workbench. Pure deterministic Hodgkin-Huxley, Izhikevich, LIF and STDP engine plus a browser shell.",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "audit": "node tools/browser-audit.mjs"
   }
 }

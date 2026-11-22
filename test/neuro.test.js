@@ -13,7 +13,7 @@ const near = (a, b, tol, msg) =>
  * =============================================================== */
 
 test('module exports a semantic version string', () => {
-  assert.equal(N.VERSION, '1.0.0');
+  assert.equal(N.VERSION, '2.0.0');
   assert.match(N.VERSION, /^\d+\.\d+\.\d+$/);
 });
 
@@ -907,7 +907,7 @@ test('traceToJSON returns a valid structured document', () => {
   const tr = N.currentClamp({ amplitude: 10, stimStart: 2, stimDuration: 10 });
   const doc = JSON.parse(N.traceToJSON(tr));
   assert.equal(doc.format, 'spike-bench-trace');
-  assert.equal(doc.version, '1.0.0');
+  assert.equal(doc.version, '2.0.0');
   assert.equal(doc.samples.length, tr.t.length);
   assert.equal(doc.columns.length, 9);
   assert.ok(Array.isArray(doc.spikes));
@@ -945,7 +945,7 @@ test('rasterToCSV and spectrumToCSV produce well formed tables', () => {
 
 test('engine attaches itself to globalThis for browser use', () => {
   assert.ok(globalThis.SpikeBench);
-  assert.equal(globalThis.SpikeBench.VERSION, '1.0.0');
+  assert.equal(globalThis.SpikeBench.VERSION, '2.0.0');
 });
 
 test('engine source contains no require calls outside the export guard', () => {

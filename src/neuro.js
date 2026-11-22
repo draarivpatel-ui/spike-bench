@@ -17,7 +17,7 @@
  * level, x = V - vRest. Reversal potentials use the modern absolute scale.
  */
 
-const VERSION = '1.0.0';
+const VERSION = '2.0.0';
 
 /* ------------------------------------------------------------------ *
  * Constants and small helpers
@@ -62,6 +62,16 @@ const FREQ_BANDS = Object.freeze({
   alpha: [8, 13],
   beta: [13, 30],
   gamma: [30, 100],
+});
+
+const LIF_DEFAULTS = Object.freeze({
+  tauM: 20,          // ms, membrane time constant
+  vRest: -65,        // mV
+  vTh: -50,          // mV, spike threshold
+  vReset: -65,       // mV
+  rIn: 3,            // mV per uA/cm2 of input drive; rheobase 5 at defaults
+  refracMs: 2,       // ms, absolute refractory period
+  tauSyn: 5,         // ms, exponential synaptic current decay
 });
 
 function clamp(x, lo, hi) {
@@ -1368,23 +1378,1026 @@ function spectrumToCSV(spectrum) {
 }
 
 /* ------------------------------------------------------------------ *
+ * SHA-256, UTF-8 and base64url codecs (pure JS, FIPS 180-4)
+ * ------------------------------------------------------------------ */
+
+const SHA256_K = Object.freeze([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb,
+  0xbef9a3f7, 0xc67178f2,
+]);
+
+const SHA256_H0 = Object.freeze([
+  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+]);
+
+/** UTF-8 encode a JS string into bytes, handling surrogate pairs. */
+function utf8Bytes(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i += 1) {
+    let c = str.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+      const c2 = str.charCodeAt(i + 1);
+      if (c2 >= 0xdc00 && c2 <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+        i += 1;
+      }
+    }
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c < 0x10000) {
+      out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    } else {
+      out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f),
+        0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+/** Decode UTF-8 bytes back into a JS string. */
+function utf8String(bytes) {
+  let out = '';
+  let i = 0;
+  while (i < bytes.length) {
+    const b = bytes[i];
+    let c;
+    if (b < 0x80) { c = b; i += 1; }
+    else if (b < 0xe0) {
+      c = ((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f); i += 2;
+    } else if (b < 0xf0) {
+      c = ((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6)
+        | (bytes[i + 2] & 0x3f); i += 3;
+    } else {
+      c = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12)
+        | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f); i += 4;
+    }
+    if (c > 0xffff) {
+      c -= 0x10000;
+      out += String.fromCharCode(0xd800 + (c >> 10), 0xdc00 + (c & 0x3ff));
+    } else {
+      out += String.fromCharCode(c);
+    }
+  }
+  return out;
+}
+
+function sha256Bytes(bytes) {
+  const H = SHA256_H0.slice();
+  const W = new Int32Array(64);
+  const tail = bytes.length % 64;
+  const padTotal = bytes.length + (tail < 56 ? 56 - tail : 120 - tail) + 8;
+  const buf = new Uint8Array(padTotal);
+  buf.set(bytes);
+  buf[bytes.length] = 0x80;
+  const dv = new DataView(buf.buffer);
+  // Bit length as a 64 bit big endian integer; messages stay below 2^32 bits
+  // in every realistic export, so the low word suffices for the high word too.
+  dv.setUint32(padTotal - 8, Math.floor(bytes.length / 0x20000000));
+  dv.setUint32(padTotal - 4, (bytes.length * 8) >>> 0);
+
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < padTotal; off += 64) {
+    for (let i = 0; i < 16; i += 1) W[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i += 1) {
+      const w15 = W[i - 15];
+      const w2 = W[i - 2];
+      const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3);
+      const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10);
+      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) | 0;
+    }
+    let a = H[0] | 0; let b = H[1] | 0; let c = H[2] | 0; let d = H[3] | 0;
+    let e = H[4] | 0; let f = H[5] | 0; let g = H[6] | 0; let h = H[7] | 0;
+    for (let i = 0; i < 64; i += 1) {
+      const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + s1 + ch + (SHA256_K[i] | 0) + W[i]) | 0;
+      const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (s0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0;
+      d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0;
+    H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0;
+    H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  let hex = '';
+  for (let i = 0; i < 8; i += 1) {
+    hex += (H[i] >>> 0).toString(16).padStart(8, '0');
+  }
+  return hex;
+}
+
+/**
+ * SHA-256 hex digest of a string (UTF-8) or byte array.
+ * Verified against the FIPS 180-4 test vectors in the test suite.
+ */
+function sha256(input) {
+  let bytes;
+  if (typeof input === 'string') bytes = utf8Bytes(input);
+  else if (input instanceof Uint8Array) bytes = input;
+  else if (input instanceof ArrayBuffer) bytes = new Uint8Array(input);
+  else if (ArrayBuffer.isView(input)) {
+    bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  } else if (Array.isArray(input)) bytes = Uint8Array.from(input);
+  else throw new TypeError('sha256 expects a string, byte array or ArrayBuffer');
+  return sha256Bytes(bytes);
+}
+
+const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** Base64url encode bytes (RFC 4648 section 5, no padding). */
+function b64urlEncode(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : null;
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : null;
+    out += B64URL[b0 >> 2];
+    out += B64URL[((b0 & 3) << 4) | (b1 === null ? 0 : b1 >> 4)];
+    if (b1 !== null) out += B64URL[((b1 & 15) << 2) | (b2 === null ? 0 : b2 >> 6)];
+    if (b2 !== null) out += B64URL[b2 & 63];
+  }
+  return out;
+}
+
+/** Base64url decode back into bytes. Throws on characters outside the alphabet. */
+function b64urlDecode(str) {
+  const rev = new Int16Array(128).fill(-1);
+  for (let i = 0; i < 64; i += 1) rev[B64URL.charCodeAt(i)] = i;
+  const clean = str.replace(/=+$/, '');
+  const out = [];
+  let acc = 0;
+  let bits = 0;
+  for (let i = 0; i < clean.length; i += 1) {
+    const code = clean.charCodeAt(i);
+    if (code >= 128 || rev[code] < 0) {
+      throw new RangeError('b64urlDecode: invalid character at index ' + i);
+    }
+    acc = (acc << 6) | rev[code];
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((acc >> bits) & 0xff);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+const STATE_PREFIX = 's1.';
+
+/**
+ * Serialize a small plain object into a URL hash safe bookmark token.
+ * Deterministic: same state always produces the same string.
+ */
+function encodeRunState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    throw new TypeError('encodeRunState expects a plain object');
+  }
+  return STATE_PREFIX + b64urlEncode(utf8Bytes(JSON.stringify(state)));
+}
+
+/** Inverse of encodeRunState; returns null for malformed input. */
+function decodeRunState(token) {
+  if (typeof token !== 'string' || !token.startsWith(STATE_PREFIX)) return null;
+  try {
+    const obj = JSON.parse(utf8String(b64urlDecode(token.slice(STATE_PREFIX.length))));
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function stateToHash(state) {
+  return '#' + encodeRunState(state);
+}
+
+function stateFromHash(hash) {
+  if (typeof hash !== 'string') return null;
+  return decodeRunState(hash.replace(/^#/, ''));
+}
+
+/* ------------------------------------------------------------------ *
+ * Leaky integrate and fire point neuron
+ * ------------------------------------------------------------------ */
+
+function resolveLIF(options = {}) {
+  const o = Object.assign({}, LIF_DEFAULTS, options.lif || options);
+  const num = (v, d, lo) => {
+    const x = Number(v);
+    return Number.isFinite(x) && x > lo ? x : d;
+  };
+  return {
+    tauM: num(o.tauM, LIF_DEFAULTS.tauM, 0),
+    vRest: Number.isFinite(Number(o.vRest)) ? Number(o.vRest) : LIF_DEFAULTS.vRest,
+    vTh: Number.isFinite(Number(o.vTh)) ? Number(o.vTh) : LIF_DEFAULTS.vTh,
+    vReset: Number.isFinite(Number(o.vReset)) ? Number(o.vReset) : LIF_DEFAULTS.vReset,
+    rIn: num(o.rIn, LIF_DEFAULTS.rIn, 0),
+    refracMs: Math.max(0, Number.isFinite(Number(o.refracMs))
+      ? Number(o.refracMs) : LIF_DEFAULTS.refracMs),
+    tauSyn: num(o.tauSyn, LIF_DEFAULTS.tauSyn, 0),
+  };
+}
+
+/**
+ * Single leaky integrate and fire neuron, driven by an injected current plus
+ * optional exponential synaptic pulses. The subthreshold update is the exact
+ * analytic solution of the linear membrane equation, so the step size only
+ * affects spike time resolution, not stability.
+ *
+ * options.synapses: [{ times: [ms...], weight }] pulses delivered into an
+ * exponentially decaying synaptic current iSyn.
+ */
+function simulateLIF(options = {}) {
+  const lif = resolveLIF(options);
+  const dt = Number(options.dt) > 0 ? Number(options.dt) : 0.05;
+  const totalDuration = Number(options.totalDuration) > 0
+    ? Number(options.totalDuration) : 50;
+  let stimulus;
+  if (typeof options.stimulus === 'function') stimulus = options.stimulus;
+  else {
+    const amplitude = Number.isFinite(options.amplitude) ? options.amplitude : 0;
+    const stimStart = Number.isFinite(options.stimStart) ? options.stimStart : 0;
+    const stimDuration = Number.isFinite(options.stimDuration)
+      ? options.stimDuration : totalDuration;
+    stimulus = makeStep(amplitude, stimStart, stimDuration);
+  }
+  const stim = finiteStimulus(stimulus);
+
+  const synapses = (Array.isArray(options.synapses) ? options.synapses : [])
+    .map((s) => ({
+      times: (s && Array.isArray(s.times) ? s.times : [])
+        .filter((t) => Number.isFinite(t)).sort((a, b) => a - b),
+      weight: s && Number.isFinite(s.weight) ? s.weight : 1,
+      next: 0,
+    }));
+
+  const decayM = Math.exp(-dt / lif.tauM);
+  const decayS = Math.exp(-dt / lif.tauSyn);
+  let V = Number.isFinite(options.initialV) ? options.initialV : lif.vRest;
+  let iSyn = 0;
+  let refrac = 0;
+  const spikes = [];
+  const tr = {
+    t: [], V: [], I: [], iSyn: [], dt,
+    meta: {
+      mode: 'lif', lif, totalDuration,
+      vRest: lif.vRest, vTh: lif.vTh, vReset: lif.vReset,
+    },
+    spikes,
+  };
+  const steps = Math.max(0, Math.floor(totalDuration / dt + 1e-9));
+  for (let k = 0; k <= steps; k += 1) {
+    const t = k * dt;
+    for (const s of synapses) {
+      while (s.next < s.times.length && s.times[s.next] <= t + 1e-9) {
+        iSyn += s.weight;
+        s.next += 1;
+      }
+    }
+    const I = stim(t);
+    tr.t.push(t);
+    tr.I.push(I);
+    tr.iSyn.push(iSyn);
+    tr.V.push(V);
+    if (k === steps) break;
+    iSyn *= decayS;
+    if (refrac > 0) {
+      refrac -= dt;
+      V = lif.vReset;
+    } else {
+      const vInf = lif.vRest + lif.rIn * (I + iSyn);
+      V += (vInf - V) * (1 - decayM);
+      if (V >= lif.vTh) {
+        spikes.push({ index: spikes.length, time: t + dt, sample: k + 1 });
+        V = lif.vReset;
+        refrac = lif.refracMs;
+      }
+    }
+    if (!Number.isFinite(V) || !Number.isFinite(iSyn)) {
+      throw new RangeError('simulateLIF diverged: non finite state');
+    }
+  }
+  tr.stats = {
+    count: spikes.length,
+    meanRateHz: totalDuration > 0 ? (spikes.length * 1000) / totalDuration : 0,
+  };
+  return tr;
+}
+
+/* ------------------------------------------------------------------ *
+ * STDP microcircuit experiment
+ * ------------------------------------------------------------------ */
+
+/**
+ * Many presynaptic spike trains converge on one postsynaptic neuron through
+ * plastic synapses that follow the classic Bi and Poo asymmetric STDP rule.
+ *
+ * Every pair event is recorded with its signed timing deltaT = tPost - tPre
+ * (positive: pre before post, potentiation; negative: post before pre,
+ * depression) so the UI can plot the exact spike timing correlation.
+ *
+ * drive: 'burst' gives the presynaptic population partial synchrony, creating
+ * strong causal structure and net potentiation; 'poisson' gives independent
+ * trains for a mostly balanced drift.
+ */
+function stdpExperiment(options = {}) {
+  const stdp = Object.assign({}, STDP_DEFAULTS, options.stdp || options.stdpOptions || {});
+  const nPre = clamp(Math.floor(Number(options.nPre) || 20), 1, 400);
+  const rate = Number(options.rate) > 0 ? Number(options.rate) : 20; // Hz
+  const duration = Number(options.duration) > 0 ? Number(options.duration) : 1000;
+  const dt = Number(options.dt) > 0 ? Number(options.dt) : 0.5;
+  const seed = Number.isFinite(options.seed) ? options.seed : 20261121;
+  const drive = options.drive === 'poisson' ? 'poisson' : 'burst';
+  const burstEvery = Number(options.burstEvery) > 0 ? Number(options.burstEvery) : 120;
+  const burstWidth = Number(options.burstWidth) > 0 ? Number(options.burstWidth) : 8;
+  const burstProb = clamp(Number.isFinite(options.burstProb)
+    ? options.burstProb : 0.55, 0, 1);
+  const bias = Number.isFinite(options.bias) ? options.bias : 0;
+  const postModel = options.postModel === 'hh' ? 'hh' : 'lif';
+  const rng = mulberry32(seed);
+  // A fast, well driven membrane lets the postsynaptic cell answer a
+  // synchronous burst inside its few millisecond window; callers can
+  // override every value via options.lif.
+  const lifOpts = Object.assign({ tauM: 8, rIn: 4, tauSyn: 8 }, options.lif || {});
+  const lif = resolveLIF({ lif: lifOpts });
+  const recordEvery = Number(options.recordEvery) > 0 ? Number(options.recordEvery) : 4;
+
+  // Presynaptic trains, generated first so every random draw is seed bound.
+  const preTrains = [];
+  for (let j = 0; j < nPre; j += 1) {
+    const times = [];
+    const sparseRate = drive === 'burst' ? rate * 0.15 : rate;
+    let t = -Math.log(1 - rng()) * 1000 / sparseRate;
+    while (t < duration) {
+      times.push(t);
+      t += -Math.log(1 - rng()) * 1000 / sparseRate;
+    }
+    if (drive === 'burst') {
+      for (let c = burstEvery / 2 + rng() * 10; c < duration; c += burstEvery) {
+        if (rng() < burstProb) times.push(c + rng() * burstWidth);
+      }
+      times.sort((a, b) => a - b);
+    }
+    preTrains.push(times);
+  }
+
+  const w0 = options.w0;
+  const weights = new Float64Array(nPre);
+  for (let j = 0; j < nPre; j += 1) {
+    weights[j] = Array.isArray(w0) && Number.isFinite(w0[j])
+      ? clamp(w0[j], stdp.wMin, stdp.wMax)
+      : (Number.isFinite(w0) ? clamp(w0, stdp.wMin, stdp.wMax)
+        : (stdp.wMin + stdp.wMax) / 2);
+  }
+  const initialWeights = Array.from(weights);
+  const lastPre = new Float64Array(nPre).fill(-Infinity);
+  let lastPost = -Infinity;
+
+  // Postsynaptic state. 'hh' uses the full RK4 Hodgkin-Huxley integrator.
+  const hh = postModel === 'hh' ? resolveHH(options) : null;
+  let hhState = null;
+  if (hh) {
+    const g = steadyStateGates(hh.vRest, hh);
+    hhState = cleanState({ V: hh.vRest, m: g.m, h: g.h, n: g.n });
+  }
+  let V = lif.vRest;
+  let iSyn = 0;
+  let refrac = 0;
+  const decayS = Math.exp(-dt / lif.tauSyn);
+  const decayM = Math.exp(-dt / lif.tauM);
+
+  const hhSubsteps = hh ? Math.max(1, Math.ceil(dt / 0.05)) : 0;
+  const hhDt = hh ? dt / hhSubsteps : 0;
+  const preNext = new Int32Array(nPre);
+  const preSpikes = [];
+  const postSpikes = [];
+  const pairs = [];
+  const trajectory = [];
+  const vTrace = { t: [], V: [], iSyn: [] };
+  let ltpEvents = 0;
+  let ltdEvents = 0;
+
+  const steps = Math.max(0, Math.floor(duration / dt + 1e-9));
+  const recordStride = Math.max(1, Math.round(recordEvery / dt));
+
+  const applyPair = (j, deltaT, t) => {
+    const dw = stdpDeltaW(deltaT, stdp);
+    const before = weights[j];
+    const after = clamp(before + dw, stdp.wMin, stdp.wMax);
+    weights[j] = after;
+    pairs.push({
+      t, synapse: j, deltaT, dw,
+      wBefore: before, wAfter: after,
+      kind: deltaT >= 0 ? 'ltp' : 'ltd',
+    });
+    if (dw >= 0) ltpEvents += 1; else ltdEvents += 1;
+  };
+
+  let hhFiredPrev = false;
+  for (let k = 0; k <= steps; k += 1) {
+    const t = k * dt;
+    iSyn *= decayS;
+
+    // Deliver presynaptic spikes; a post spike inside the window depresses.
+    for (let j = 0; j < nPre; j += 1) {
+      while (preNext[j] < preTrains[j].length
+          && preTrains[j][preNext[j]] <= t + 1e-9) {
+        const tPre = preTrains[j][preNext[j]];
+        iSyn += weights[j];
+        preSpikes.push({ t: tPre, neuron: j });
+        const deltaT = lastPost - tPre;
+        if (lastPost > -Infinity && -deltaT > 0 && -deltaT <= stdp.window) {
+          applyPair(j, deltaT, t);
+        }
+        lastPre[j] = tPre;
+        preNext[j] += 1;
+      }
+    }
+
+    // Postsynaptic update. The HH membrane needs a finer step than the
+    // sandbox clock, so it integrates in substeps of at most 0.05 ms.
+    let postFired = false;
+    if (hhState) {
+      for (let s = 0; s < hhSubsteps; s += 1) {
+        hhState = rk4Step(hhState, iSyn + bias, hhDt, hh);
+      }
+      V = hhState.V;
+      const crossed = !hhFiredPrev && V > 0;
+      hhFiredPrev = V > 0;
+      if (crossed) postFired = true;
+    } else {
+      if (refrac > 0) {
+        refrac -= dt;
+        V = lif.vReset;
+      } else {
+        const vInf = lif.vRest + lif.rIn * (bias + iSyn);
+        V += (vInf - V) * (1 - decayM);
+        if (V >= lif.vTh) postFired = true;
+      }
+      if (postFired) { V = lif.vReset; refrac = lif.refracMs; }
+    }
+
+    if (postFired) {
+      postSpikes.push(t);
+      for (let j = 0; j < nPre; j += 1) {
+        const deltaT = t - lastPre[j];
+        if (deltaT >= 0 && deltaT <= stdp.window) applyPair(j, deltaT, t);
+      }
+      lastPost = t;
+    }
+
+    vTrace.t.push(t);
+    vTrace.V.push(V);
+    vTrace.iSyn.push(iSyn);
+    if (k % recordStride === 0) {
+      trajectory.push({ t, weights: Array.from(weights) });
+    }
+  }
+
+  const finalWeights = Array.from(weights);
+  const mean = (xs) => xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
+  return {
+    params: {
+      nPre, rate, duration, dt, seed, drive,
+      burstEvery, burstWidth, burstProb, bias, postModel,
+      stdp: Object.assign({}, stdp),
+      lif: Object.assign({}, lif),
+    },
+    preTrains, preSpikes, postSpikes, pairs, pairsAll: pairs,
+    weights: {
+      initial: initialWeights,
+      final: finalWeights,
+      trajectory,
+      meanTrajectory: trajectory.map((p) => ({ t: p.t, mean: mean(p.weights) })),
+    },
+    vTrace,
+    stats: {
+      preSpikeCount: preSpikes.length,
+      postSpikeCount: postSpikes.length,
+      meanPostRateHz: duration > 0 ? (postSpikes.length * 1000) / duration : 0,
+      ltpEvents, ltdEvents,
+      meanWeightInitial: mean(initialWeights),
+      meanWeightFinal: mean(finalWeights),
+      deltaMeanWeight: mean(finalWeights) - mean(initialWeights),
+      totalPairEvents: pairs.length,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Izhikevich phase portraits and Hodgkin-Huxley reduced nullclines
+ * ------------------------------------------------------------------ */
+
+/**
+ * Simulate one Izhikevich neuron under tonic drive and return its (v, u)
+ * trajectory with spike markers, ready for phase plane plotting.
+ */
+function simulateIzh(options = {}) {
+  const type = IZH_TYPES[options.type] ? options.type : 'RS';
+  const p = IZH_TYPES[type];
+  const dt = Number(options.dt) > 0 ? Number(options.dt) : 0.25;
+  const duration = Number(options.duration) > 0 ? Number(options.duration) : 200;
+  const I = options.I === undefined ? 10 : options.I;
+  const iAt = (t) => {
+    const v = typeof I === 'function' ? I(t) : I;
+    if (!Number.isFinite(v)) {
+      throw new RangeError('simulateIzh: injected current is not finite');
+    }
+    return v;
+  };
+  let v = Number.isFinite(options.v0) ? options.v0 : -65;
+  let u = Number.isFinite(options.u0) ? options.u0 : p.b * v;
+  const trajectory = [];
+  const spikes = [];
+  const steps = Math.max(0, Math.floor(duration / dt + 1e-9));
+  for (let k = 0; k <= steps; k += 1) {
+    const t = k * dt;
+    if (v >= 30) {
+      trajectory.push({ t, v: 30, u, spike: true });
+      spikes.push(t);
+      v = p.c;
+      u += p.d;
+      continue;
+    }
+    const next = izhikevichStep(v, u, iAt(t), p, dt);
+    trajectory.push({ t, v, u, spike: false });
+    v = next.v;
+    u = next.u;
+    if (!Number.isFinite(v) || !Number.isFinite(u)) {
+      throw new RangeError('simulateIzh diverged: non finite state');
+    }
+  }
+  return { trajectory, spikes, type, dt, duration };
+}
+
+/** Exact (v, u) nullclines for the Izhikevich model at drive I. */
+function izhNullclines(I, type = 'RS', options = {}) {
+  const p = IZH_TYPES[type] || IZH_TYPES.RS;
+  const vMin = Number.isFinite(options.vMin) ? options.vMin : -90;
+  const vMax = Number.isFinite(options.vMax) ? options.vMax : 40;
+  const step = Number(options.step) > 0 ? Number(options.step) : 1;
+  const drive = Number.isFinite(I) ? I : 0;
+  const vNull = [];
+  const uNull = [];
+  for (let v = vMin; v <= vMax + 1e-9; v += step) {
+    vNull.push({ v, u: 0.04 * v * v + 5 * v + 140 + drive });
+    uNull.push({ v, u: p.b * v });
+  }
+  // Equilibria solve 0.04 v^2 + (5 - b) v + 140 + I = 0.
+  const A = 0.04;
+  const B = 5 - p.b;
+  const C = 140 + drive;
+  const disc = B * B - 4 * A * C;
+  const equilibria = [];
+  if (disc >= 0) {
+    const s = Math.sqrt(disc);
+    equilibria.push({ v: (-B - s) / (2 * A), u: p.b * (-B - s) / (2 * A) });
+    if (s > 0) equilibria.push({ v: (-B + s) / (2 * A), u: p.b * (-B + s) / (2 * A) });
+  }
+  return { vNull, uNull, equilibria, I: drive, type };
+}
+
+/** Full phase portrait bundle: trajectory plus exact nullclines. */
+function phasePortraitIzh(options = {}) {
+  const sim = simulateIzh(options);
+  const drive = Number.isFinite(options.I) ? options.I : 0;
+  const nc = izhNullclines(drive, sim.type, options);
+  return {
+    model: 'izhikevich',
+    trajectory: sim.trajectory,
+    spikes: sim.spikes,
+    vNullcline: nc.vNull,
+    uNullcline: nc.uNull,
+    equilibria: nc.equilibria,
+    isLimitCycle: sim.spikes.length > 0,
+    spikeCount: sim.spikes.length,
+    I: drive,
+    type: sim.type,
+    duration: sim.duration,
+    dt: sim.dt,
+  };
+}
+
+/**
+ * Reduced (V, n) nullclines for the Hodgkin-Huxley membrane under a constant
+ * injected current, using the standard fast slow decomposition: m and h are
+ * assumed to sit at their voltage dependent steady states, leaving n as the
+ * slow variable. The V nullcline solves dV/dt = 0 for n; the n nullcline is
+ * n_inf(V). Only V nullcline points with n inside [0, 1] are reported.
+ */
+function hhReducedNullclines(I, options = {}) {
+  const hh = asHH(options);
+  const drive = Number.isFinite(I) ? I : 0;
+  const vMin = Number.isFinite(options.vMin) ? options.vMin : -100;
+  const vMax = Number.isFinite(options.vMax) ? options.vMax : 60;
+  const step = Number(options.step) > 0 ? Number(options.step) : 0.25;
+  const vNull = [];
+  const nNull = [];
+  for (let V = vMin; V <= vMax + 1e-9; V += step) {
+    const g = steadyStateGates(V, hh);
+    const iNa = hh.gNaEff * g.mInf * g.mInf * g.mInf * g.hInf * (V - hh.eNa);
+    const iL = hh.gL * (V - hh.eL);
+    const denom = hh.gKEff * (V - hh.eK);
+    if (Math.abs(denom) > 1e-9) {
+      const n4 = (drive - iNa - iL) / denom;
+      if (n4 >= 0) {
+        const nStar = Math.pow(n4, 0.25);
+        if (nStar >= 0 && nStar <= 1) vNull.push({ V, n: nStar });
+      }
+    }
+    nNull.push({ V, n: g.nInf });
+  }
+  return { vNull, nNull, I: drive };
+}
+
+/**
+ * Phase portrait of the Hodgkin-Huxley membrane in the (V, n) plane under a
+ * constant current step, plus the reduced nullclines for interpretation.
+ */
+function phasePortraitHH(options = {}) {
+  const I = Number.isFinite(options.amplitude)
+    ? options.amplitude
+    : (Number.isFinite(options.I) ? options.I : 10);
+  const duration = Number(options.duration) > 0 ? Number(options.duration) : 50;
+  const tr = currentClamp(Object.assign({}, options, {
+    amplitude: I, stimStart: 0, stimDuration: duration, postTime: 0,
+    stimulusType: 'step',
+  }));
+  const trajectory = [];
+  for (let k = 0; k < tr.t.length; k += 1) {
+    trajectory.push({ t: tr.t[k], V: tr.V[k], n: tr.n[k], m: tr.m[k], h: tr.h[k] });
+  }
+  const nc = hhReducedNullclines(I, options);
+  return {
+    model: 'hodgkin-huxley',
+    trajectory,
+    spikes: tr.spikes.map((s) => s.time),
+    vNullcline: nc.vNull,
+    nNullcline: nc.nNull,
+    isLimitCycle: tr.spikes.length > 0,
+    spikeCount: tr.spikes.length,
+    I,
+    duration,
+    dt: tr.dt,
+  };
+}
+
+/** Combined rheobase bisection plus an f-I sweep in one call. */
+function fISweep(options = {}) {
+  const maxI = Number.isFinite(options.maxI) && options.maxI > 0 ? options.maxI : 20;
+  const stepI = Number.isFinite(options.stepI) && options.stepI > 0
+    ? options.stepI : 2;
+  const amplitudes = Array.isArray(options.amplitudes)
+    ? options.amplitudes.filter((I) => Number.isFinite(I))
+    : (() => {
+      const out = [];
+      for (let I = 0; I <= maxI + 1e-9; I += stepI) out.push(Math.round(I * 1e6) / 1e6);
+      return out;
+    })();
+  const fi = fICurve(Object.assign({}, options, { amplitudes }));
+  const rheo = findRheobase(options);
+  const first = fi.points.find((p) => p.rate > 0);
+  return {
+    points: fi.points,
+    amplitudes: fi.points.map((p) => p.I),
+    rates: fi.points.map((p) => p.rate),
+    monotonic: fi.monotonic,
+    maxRate: fi.maxRate,
+    stimDuration: fi.stimDuration,
+    rheobase: rheo.rheobase,
+    rheobaseDetail: rheo,
+    firstSpikingI: first ? first.I : null,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Verified deterministic export
+ * ------------------------------------------------------------------ */
+
+/** Canonical serialization for checksumming: JSON with stable key order. */
+function canonicalJSON(payload) {
+  return JSON.stringify(payload);
+}
+
+/** SHA-256 checksum helper for any exported text. */
+function checksum(text) {
+  return sha256(String(text));
+}
+
+/**
+ * Wrap a payload in a self verifying document: the payload checksum travels
+ * beside it so a reader can prove the export was not corrupted or edited.
+ */
+function verifiedDocument(payload) {
+  const body = canonicalJSON(payload);
+  return JSON.stringify({
+    format: 'spike-bench-verified',
+    version: VERSION,
+    algorithm: 'SHA-256',
+    checksum: sha256(body),
+    payload,
+  }, null, 2);
+}
+
+/** Recompute a verified document's checksum. */
+function verifyDocument(jsonText) {
+  let doc;
+  try {
+    doc = JSON.parse(jsonText);
+  } catch (err) {
+    return { ok: false, error: 'invalid JSON' };
+  }
+  if (!doc || doc.format !== 'spike-bench-verified' || doc.payload === undefined) {
+    return { ok: false, error: 'not a spike-bench verified document' };
+  }
+  const computed = sha256(canonicalJSON(doc.payload));
+  return {
+    ok: computed === doc.checksum,
+    checksum: doc.checksum,
+    computed,
+    algorithm: doc.algorithm,
+    version: doc.version,
+  };
+}
+
+/**
+ * Assemble a session report: membrane trace samples, spike raster, synaptic
+ * weights and f-I points travel together in one verified JSON document.
+ */
+function exportSpikeReport(sections = {}) {
+  const payload = {
+    label: typeof sections.label === 'string' ? sections.label : 'spike-bench-session',
+    generator: 'spike-bench/' + VERSION,
+    sections: {},
+  };
+  if (sections.meta && typeof sections.meta === 'object') payload.meta = sections.meta;
+  if (sections.trace && Array.isArray(sections.trace.t)) {
+    const tr = sections.trace;
+    const samples = [];
+    const rows = tr.t.length;
+    for (let i = 0; i < rows; i += 1) {
+      samples.push([fixed(tr.t[i], 4), fixed(tr.V[i], 4), fixed(tr.I[i], 4)]);
+    }
+    payload.sections.trace = {
+      columns: ['t_ms', 'V_mV', 'I_uA_cm2'],
+      dt: tr.dt,
+      samples,
+      spikes: (tr.spikes || []).map((s) => ({
+        time: fixed(s.time !== undefined ? s.time : s, 4),
+        peak: fixed(s.peak, 4),
+      })),
+    };
+  }
+  if (Array.isArray(sections.raster)) {
+    payload.sections.raster = sections.raster.map((s) => ({
+      t: fixed(s.t, 4), neuron: s.neuron, type: s.type,
+    }));
+  }
+  if (sections.weights) {
+    const w = sections.weights;
+    payload.sections.weights = {
+      initial: w.initial || [],
+      final: w.final || [],
+      stats: w.stats || {},
+    };
+  }
+  if (sections.pairs) {
+    payload.sections.pairs = sections.pairs.map((p) => ({
+      t: fixed(p.t, 4), synapse: p.synapse,
+      deltaT: fixed(p.deltaT, 4), dw: fixed(p.dw, 6),
+    }));
+  }
+  if (sections.fiCurve) {
+    const fi = sections.fiCurve;
+    payload.sections.fiCurve = {
+      points: (fi.points || fi || []).map((p) => ({
+        I: fixed(p.I, 4), rate: fixed(p.rate, 4), spikeCount: p.spikeCount,
+      })),
+      rheobase: fi.rheobase !== undefined ? fi.rheobase : null,
+      monotonic: !!fi.monotonic,
+    };
+  }
+  const json = verifiedDocument(payload);
+  return {
+    json,
+    checksum: sha256(json),
+    payloadChecksum: JSON.parse(json).checksum,
+    payload,
+    bytes: utf8Bytes(json).length,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * In page self test battery
+ * ------------------------------------------------------------------ */
+
+/**
+ * Deterministic self checks, runnable in the browser and in Node.
+ * Returns { ok, pass, fail, results: [{name, ok, detail, ms}] }.
+ */
+function runSelfTests() {
+  const results = [];
+  const check = (name, fn) => {
+    const t0 = Date.now();
+    try {
+      const detail = fn();
+      results.push({ name, ok: true, detail: String(detail), ms: Date.now() - t0 });
+    } catch (err) {
+      results.push({
+        name, ok: false, detail: err && err.message ? err.message : String(err),
+        ms: Date.now() - t0,
+      });
+    }
+  };
+  const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+  check('sha256-fips-vector', () => {
+    const want = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+    const got = sha256('abc');
+    expect(got === want, 'abc digest mismatch: ' + got);
+    return 'sha256("abc") = ' + got.slice(0, 16) + '...';
+  });
+
+  check('resting-potential-stability', () => {
+    const tr = simulateHH({ totalDuration: 50, dt: 0.02 });
+    const drift = Math.abs(tr.V[tr.V.length - 1] - tr.V[0]);
+    expect(drift < 0.1, 'rest drift ' + drift.toFixed(4) + ' mV');
+    return 'drift ' + drift.toFixed(4) + ' mV over 50 ms';
+  });
+
+  check('rk4-step-halving-convergence', () => {
+    const common = { amplitude: 10, stimStart: 5, stimDuration: 20, postTime: 5 };
+    const a = currentClamp(Object.assign({}, common, { dt: 0.02 }));
+    const b = currentClamp(Object.assign({}, common, { dt: 0.01 }));
+    expect(a.spikes.length > 0 && b.spikes.length > 0, 'no spikes in either run');
+    const d = Math.abs(a.spikes[0].peak - b.spikes[0].peak);
+    expect(d < 1.5, 'peak mismatch ' + d.toFixed(3) + ' mV');
+    return 'peak error ' + d.toFixed(3) + ' mV at halved dt';
+  });
+
+  check('spike-detection-and-shape', () => {
+    const tr = currentClamp({ amplitude: 10, stimStart: 5, stimDuration: 20 });
+    expect(tr.spikes.length >= 2, 'expected a spike train');
+    expect(tr.spikes[0].peak > 0 && tr.spikes[0].peak < 60, 'peak out of range');
+    return tr.spikes.length + ' spikes, first peak ' +
+      tr.spikes[0].peak.toFixed(1) + ' mV';
+  });
+
+  check('stdp-ltp-sign', () => {
+    const dw = stdpDeltaW(10);
+    expect(dw > 0, 'causal pairing did not potentiate');
+    return 'causal dt=+10 ms gives dw=+' + dw.toFixed(5);
+  });
+
+  check('stdp-ltd-sign', () => {
+    const dw = stdpDeltaW(-10);
+    expect(dw < 0, 'anti-causal pairing did not depress');
+    return 'anti-causal dt=-10 ms gives dw=' + dw.toFixed(5);
+  });
+
+  check('stdp-exponential-window', () => {
+    const ratio = stdpDeltaW(STDP_DEFAULTS.tauPlus) / stdpDeltaW(0);
+    expect(Math.abs(ratio - Math.exp(-1)) < 1e-9,
+      'potentiation does not decay as exp(-t/tau)');
+    return 'dw(tau)/dw(0) = ' + ratio.toFixed(6) + ' vs 1/e';
+  });
+
+  check('stdp-sandbox-burst-potentiates', () => {
+    const r = stdpExperiment({
+      nPre: 8, duration: 400, dt: 0.5, drive: 'burst', seed: 7,
+    });
+    expect(r.stats.ltpEvents > 0, 'no LTP events recorded');
+    expect(r.weights.final.every((w) => w >= -1e-9), 'weight below bound');
+    return r.stats.ltpEvents + ' LTP / ' + r.stats.ltdEvents + ' LTD events';
+  });
+
+  check('rheobase-bisection-converges', () => {
+    const r = findRheobase({ iterations: 12, stimDuration: 60 });
+    expect(r.converged === true, 'rheobase did not converge');
+    expect(r.rheobase > 1 && r.rheobase < 6, 'rheobase out of range: ' + r.rheobase);
+    return 'rheobase ' + r.rheobase.toFixed(3) + ' uA/cm2';
+  });
+
+  check('rheobase-monotonicity', () => {
+    const r = findRheobase({ iterations: 12, stimDuration: 60 });
+    const below = currentClamp({
+      amplitude: r.lowerBound - 0.05, stimStart: 5,
+      stimDuration: r.stimDuration, postTime: 0,
+    });
+    const above = currentClamp({
+      amplitude: r.upperBound + 0.05, stimStart: 5,
+      stimDuration: r.stimDuration, postTime: 0,
+    });
+    expect(below.spikes.length === 0, 'subthreshold run fired');
+    expect(above.spikes.length >= 1, 'suprathreshold run silent');
+    return 'fires above ' + r.upperBound.toFixed(3) +
+      ', silent below ' + r.lowerBound.toFixed(3);
+  });
+
+  check('fi-monotone-sweep', () => {
+    const fi = fICurve({ amplitudes: [0, 5, 10, 15, 20], stimDuration: 200 });
+    expect(fi.monotonic, 'f-I curve not monotone');
+    expect(fi.maxRate > 0, 'no firing on sweep');
+    return 'max rate ' + fi.maxRate.toFixed(1) + ' Hz, monotone';
+  });
+
+  check('lif-threshold-and-reset', () => {
+    const tr = simulateLIF({ amplitude: 8, totalDuration: 100, dt: 0.05 });
+    expect(tr.spikes.length > 0, 'LIF did not fire above rheobase');
+    expect(tr.spikes[0].time > 0, 'non physical spike time');
+    return 'LIF fired ' + tr.spikes.length + ' spikes at I=8';
+  });
+
+  check('izh-phase-plane-limit-cycle', () => {
+    const pp = phasePortraitIzh({ I: 10, duration: 200 });
+    expect(pp.spikeCount > 0, 'no limit cycle at I=10');
+    const quiet = phasePortraitIzh({ I: 0, duration: 100 });
+    expect(quiet.spikeCount === 0, 'spurious spikes at rest');
+    return 'RS limit cycle: ' + pp.spikeCount + ' spikes at I=10';
+  });
+
+  check('network-determinism', () => {
+    const a = corticalNetwork({ n: 8, seed: 11 }).run(200);
+    const b = corticalNetwork({ n: 8, seed: 11 }).run(200);
+    expect(a.totalSpikes === b.totalSpikes, 'seeded runs diverged');
+    return 'seed 11: ' + a.totalSpikes + ' spikes, identical';
+  });
+
+  check('export-roundtrip-verified', () => {
+    const report = exportSpikeReport({
+      label: 'self-test',
+      raster: [{ t: 1.5, neuron: 0, type: 'RS' }],
+    });
+    const v = verifyDocument(report.json);
+    expect(v.ok, 'checksum verification failed');
+    return 'checksum ' + report.payloadChecksum.slice(0, 12) + '... verified';
+  });
+
+  check('state-codec-roundtrip', () => {
+    const state = { amp: 10, proto: 'step', nested: { a: [1, 2, 3] } };
+    const back = decodeRunState(encodeRunState(state));
+    expect(back && back.amp === 10 && back.nested.a[2] === 3, 'codec mismatch');
+    return 'state round trip via #' + encodeRunState(state).slice(0, 14) + '...';
+  });
+
+  check('fft-impulse-flat-spectrum', () => {
+    const re = [1, 0, 0, 0];
+    const im = [0, 0, 0, 0];
+    fft(re, im);
+    expect(re.every((x) => Math.abs(x - 1) < 1e-12), 'impulse spectrum not flat');
+    return 'unit impulse gives flat spectrum';
+  });
+
+  const pass = results.filter((r) => r.ok).length;
+  return {
+    ok: pass === results.length,
+    pass,
+    fail: results.length - pass,
+    total: results.length,
+    results,
+    version: VERSION,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Public API
  * ------------------------------------------------------------------ */
 
 const API = {
   VERSION,
-  HH_DEFAULTS, IZH_TYPES, STDP_DEFAULTS, FREQ_BANDS, TRACE_COLUMNS,
+  HH_DEFAULTS, IZH_TYPES, STDP_DEFAULTS, FREQ_BANDS, LIF_DEFAULTS, TRACE_COLUMNS,
   clamp, temperatureFactor, resolveHH, rateFunctions, steadyStateGates,
   hhCurrents, hhDerivatives, gatingDerivatives, rk4Step, rk4ClampStep,
   makeStep, makeRamp,
   analyzeSpikes, detectSpikes, countSpikes, spikeStats,
-  simulateHH, HodgkinHuxley, currentClamp, fICurve, findRheobase,
+  simulateHH, HodgkinHuxley, currentClamp, fICurve, findRheobase, fISweep,
   refractoryPeriod, voltageClamp, analyzeVoltageClamp,
   familyVoltageClamp, reversalPotential,
-  stdpDeltaW, applySTDP, stdpCurve,
+  stdpDeltaW, applySTDP, stdpCurve, stdpExperiment,
   izhikevichStep, CorticalNetwork, corticalNetwork,
+  simulateIzh, izhNullclines, phasePortraitIzh,
+  hhReducedNullclines, phasePortraitHH,
   fft, powerSpectrum, lfpPowerSpectrum,
   mulberry32,
+  resolveLIF, simulateLIF,
+  sha256, sha256Bytes, checksum, utf8Bytes, utf8String,
+  b64urlEncode, b64urlDecode,
+  encodeRunState, decodeRunState, stateToHash, stateFromHash,
+  canonicalJSON, verifiedDocument, verifyDocument, exportSpikeReport,
+  runSelfTests,
   traceToCSV, traceToJSON, ivToCSV, fIToCSV, rasterToCSV, spectrumToCSV,
 };
 

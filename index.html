@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Spike Bench, A Patch-Clamp Workbench</title>
-  <meta name="description" content="Spike Bench runs real Hodgkin-Huxley simulations in the browser. Current clamp steps and ramps, voltage clamp, TTX and TEA channel block, live spike analysis. Built by Aariv Patel.">
-  <meta property="og:title" content="Spike Bench, A Patch-Clamp Workbench">
-  <meta property="og:description" content="Run Hodgkin-Huxley clamp protocols in the browser, watch the membrane fire, and read spike stats from the same engine the tests run. By Aariv Patel.">
+  <title>Spike Bench, A Computational Neuroscience Workbench</title>
+  <meta name="description" content="Spike Bench runs real Hodgkin-Huxley and Izhikevich simulations in the browser. Clamp protocols, STDP learning sandbox, f-I tuning curves, phase portraits, SHA-256 verified exports. Built by Aariv Patel.">
+  <meta property="og:title" content="Spike Bench, A Computational Neuroscience Workbench">
+  <meta property="og:description" content="Run Hodgkin-Huxley clamp protocols, train a plastic STDP microcircuit, sweep the f-I curve, and read phase-plane limit cycles, all offline in one page. By Aariv Patel.">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary">
   <meta name="theme-color" content="#0c1024">
@@ -18,6 +18,15 @@
   <main class="page">
     <header class="top">
       <h1>Spike Bench</h1>
+      <nav class="tabs" aria-label="Workbench sections">
+        <button class="tab active" type="button" data-tab="clamp" aria-selected="true">Clamp</button>
+        <button class="tab" type="button" data-tab="stdp" aria-selected="false">STDP Sandbox</button>
+        <button class="tab" type="button" data-tab="fi" aria-selected="false">F-I and Phase</button>
+        <button class="tab" type="button" data-tab="lab" aria-selected="false">Export and Tests</button>
+      </nav>
+    </header>
+
+    <section id="tab-clamp" class="bench" aria-label="Clamp workbench">
       <nav class="presets" aria-label="Preset protocols">
         <button class="preset" type="button" data-preset="rest">Resting</button>
         <button class="preset" type="button" data-preset="spike">Single Spike</button>
@@ -26,10 +35,6 @@
         <button class="preset" type="button" data-preset="tea">TEA Block</button>
         <button class="preset" type="button" data-preset="vclamp">Voltage Clamp</button>
       </nav>
-    </header>
-
-    <section class="bench" aria-labelledby="run-heading">
-      <h2 id="run-heading" class="visually-hidden">Simulation run</h2>
 
       <div class="controls" aria-label="Protocol controls">
         <label class="field">
@@ -99,9 +104,185 @@
         </div>
       </div>
     </section>
+
+    <section id="tab-stdp" class="bench" aria-label="STDP learning sandbox" hidden>
+      <div class="controls" aria-label="STDP controls">
+        <label class="field">
+          <span>Presynaptic drive</span>
+          <select id="s-drive">
+            <option value="burst" selected>Synchronized bursts</option>
+            <option value="poisson">Independent Poisson</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Postsynaptic cell</span>
+          <select id="s-post">
+            <option value="lif" selected>Leaky integrate and fire</option>
+            <option value="hh">Hodgkin-Huxley (RK4)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Synapses</span>
+          <input id="s-npre" type="number" step="1" min="1" max="60" value="16">
+        </label>
+        <label class="field">
+          <span>Rate, Hz</span>
+          <input id="s-rate" type="number" step="1" min="1" value="20">
+        </label>
+        <label class="field">
+          <span>Duration, ms</span>
+          <input id="s-dur" type="number" step="100" min="100" value="1200">
+        </label>
+        <label class="field">
+          <span>A+, LTP</span>
+          <input id="s-aplus" type="number" step="0.001" min="0" value="0.01">
+        </label>
+        <label class="field">
+          <span>A-, LTD</span>
+          <input id="s-aminus" type="number" step="0.001" min="0" value="0.0105">
+        </label>
+        <label class="field">
+          <span>tau+, ms</span>
+          <input id="s-tauplus" type="number" step="1" min="0.5" value="20">
+        </label>
+        <label class="field">
+          <span>tau-, ms</span>
+          <input id="s-tauminus" type="number" step="1" min="0.5" value="20">
+        </label>
+        <label class="field">
+          <span>Seed</span>
+          <input id="s-seed" type="number" step="1" value="20261121">
+        </label>
+        <div class="control-actions">
+          <button id="s-run" class="btn btn-primary" type="button">Run STDP</button>
+        </div>
+      </div>
+
+      <ul class="stats" aria-label="STDP stats">
+        <li><span class="stat-label">Post spikes</span> <b id="s-stat-1">-</b></li>
+        <li><span class="stat-label">LTP events</span> <b id="s-stat-2">-</b></li>
+        <li><span class="stat-label">LTD events</span> <b id="s-stat-3">-</b></li>
+        <li><span class="stat-label">Mean w, start &gt; end</span> <b id="s-stat-4">-</b></li>
+        <li><span class="stat-label">Delta mean w</span> <b id="s-stat-5">-</b></li>
+      </ul>
+
+      <div class="scope">
+        <canvas id="stdp-weights" height="240" aria-label="Synaptic weight trajectories"></canvas>
+        <canvas id="stdp-corr" height="220" aria-label="Spike timing correlation, weight change versus delta t"></canvas>
+        <canvas id="stdp-raster" height="170" aria-label="Presynaptic raster and postsynaptic spikes"></canvas>
+        <div class="legend">
+          <span><i class="sw sw-ltp"></i>LTP pairs, dt &gt; 0</span>
+          <span><i class="sw sw-ltd"></i>LTD pairs, dt &lt; 0</span>
+          <span><i class="sw sw-post"></i>postsynaptic spike row</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-fi" class="bench" aria-label="F-I curve and phase plane" hidden>
+      <div class="controls" aria-label="F-I sweep controls">
+        <label class="field">
+          <span>Max I, uA/cm&sup2;</span>
+          <input id="f-maxI" type="number" step="1" min="1" value="20">
+        </label>
+        <label class="field">
+          <span>Step I</span>
+          <input id="f-stepI" type="number" step="0.5" min="0.25" value="2">
+        </label>
+        <label class="field">
+          <span>Stimulus, ms</span>
+          <input id="f-stimdur" type="number" step="50" min="50" value="400">
+        </label>
+        <div class="control-actions">
+          <button id="fi-sweep" class="btn btn-primary" type="button">Run Sweep</button>
+        </div>
+      </div>
+
+      <ul class="stats" aria-label="Sweep and portrait stats">
+        <li><span class="stat-label">Rheobase, uA/cm&sup2;</span> <b id="fi-stat-1">-</b></li>
+        <li><span class="stat-label">First spiking I</span> <b id="fi-stat-2">-</b></li>
+        <li><span class="stat-label">Max rate, Hz</span> <b id="fi-stat-3">-</b></li>
+        <li><span class="stat-label">Portrait</span> <b id="fi-stat-4">-</b></li>
+        <li><span class="stat-label">Spikes</span> <b id="fi-stat-5">-</b></li>
+      </ul>
+
+      <div class="scope">
+        <canvas id="fi-curve" height="260" aria-label="F-I tuning curve, rate versus injected current"></canvas>
+      </div>
+
+      <div class="controls" aria-label="Phase portrait controls">
+        <label class="field">
+          <span>Model</span>
+          <select id="p-model">
+            <option value="izh" selected>Izhikevich neuron</option>
+            <option value="hh">Hodgkin-Huxley, V-n</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Phenotype</span>
+          <select id="p-type">
+            <option value="RS" selected>Regular spiking</option>
+            <option value="IB">Intrinsically bursting</option>
+            <option value="FS">Fast spiking</option>
+            <option value="CH">Chattering</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Drive I</span>
+          <input id="p-current" type="number" step="0.5" value="10">
+        </label>
+        <label class="field">
+          <span>Duration, ms</span>
+          <input id="p-dur" type="number" step="20" min="20" value="200">
+        </label>
+        <div class="control-actions">
+          <button id="p-run" class="btn btn-primary" type="button">Run Portrait</button>
+        </div>
+      </div>
+
+      <div class="scope">
+        <canvas id="phase-plane" height="340" aria-label="Phase plane trajectory and nullclines"></canvas>
+        <div class="legend">
+          <span><i class="sw sw-traj"></i>trajectory</span>
+          <span><i class="sw sw-nullv"></i>V nullcline</span>
+          <span><i class="sw sw-nullu"></i>u or n nullcline</span>
+          <span><i class="sw sw-eq"></i>equilibria</span>
+        </div>
+        <p id="p-readout" class="readout" aria-live="off"></p>
+      </div>
+    </section>
+
+    <section id="tab-lab" class="bench" aria-label="Verified export and self tests" hidden>
+      <div class="controls" aria-label="Export and test actions">
+        <div class="control-actions">
+          <button id="x-bookmark" class="btn" type="button">Bookmark Link</button>
+          <button id="x-selftest" class="btn btn-primary" type="button">Run Self-Tests</button>
+        </div>
+      </div>
+
+      <div id="x-exports" class="controls" hidden aria-label="Verified exports">
+        <div class="control-actions">
+          <button id="x-json" class="btn" type="button" disabled>Session JSON + SHA-256</button>
+          <button id="x-csv" class="btn" type="button" disabled>Trace CSV</button>
+          <button id="x-raster" class="btn" type="button" disabled>Raster CSV</button>
+          <button id="x-weights" class="btn" type="button" disabled>Weights CSV</button>
+          <button id="x-fi" class="btn" type="button" disabled>F-I CSV</button>
+        </div>
+      </div>
+
+      <p id="x-checksum" class="checksum" hidden>Checksum <code id="x-checksum-value"></code></p>
+
+      <div class="scope">
+        <p id="x-summary" class="selftest-summary">Run the self test battery to verify the engine in this page.</p>
+        <ul id="x-results" class="selftest-list" aria-label="Self test results"></ul>
+      </div>
+    </section>
   </main>
   <div id="live" class="visually-hidden" role="status" aria-live="polite"></div>
   <script src="src/neuro.js"></script>
+  <script src="js/plots.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/stdp.js"></script>
+  <script src="js/fi.js"></script>
+  <script src="js/lab.js"></script>
 </body>
 </html>

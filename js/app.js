@@ -3,9 +3,13 @@
  * Spike Bench browser shell. Drives the same Hodgkin-Huxley engine the node
  * tests cover (src/neuro.js exposes window.SpikeBench), draws the recorded
  * traces and reports the engine's own spike analysis.
+ *
+ * window.SB carries the shared session: the last workbench trace, the last
+ * STDP experiment and the last sweep, so the lab tab can export them all.
  */
 (function () {
   const N = window.SpikeBench;
+  const UI = window.SBUI;
   const $ = (id) => document.getElementById(id);
 
   const dom = {
@@ -25,6 +29,7 @@
     legend: $('legend'),
     live: $('live'),
     presets: document.querySelectorAll('.preset'),
+    tabs: document.querySelectorAll('.tab'),
     statLabels: [$('stat-1-label'), $('stat-2-label'), $('stat-3-label'),
       $('stat-4-label'), $('stat-5-label')],
     statValues: [$('stat-1'), $('stat-2'), $('stat-3'), $('stat-4'), $('stat-5')],
@@ -39,20 +44,18 @@
     vclamp: { proto: 'vclamp', vhold: -65, vcmd: -20, start: 5, dur: 20, post: 15, ttx: 0, tea: 0 },
   };
 
-  const COLORS = {
-    grid: 'rgba(210, 220, 255, 0.09)',
-    zero: 'rgba(210, 220, 255, 0.22)',
-    axis: 'rgba(210, 220, 255, 0.45)',
-    text: '#9aa3c7',
-    v: '#ff9d3d',
-    ina: '#66d9ff',
-    ik: '#ff9d3d',
-    stimFill: 'rgba(102, 217, 255, 0.22)',
-    stimLine: '#66d9ff',
-    window: 'rgba(255, 157, 61, 0.07)',
-  };
+  const COLORS = UI.COLORS;
+  const plot = UI.plot;
 
-  let last = null;
+  /* ------------------------- shared session ------------------------- */
+
+  const SB = window.SB = {
+    N, UI,
+    last: { trace: null, stdp: null, sweep: null, portrait: null },
+    tab: 'clamp',
+    collectors: {},
+    appliers: {},
+  };
 
   function num(el, fallback) {
     const v = Number(el.value);
@@ -66,6 +69,57 @@
   function announce(msg) {
     dom.live.textContent = msg;
   }
+  SB.announce = announce;
+  SB.num = num;
+
+  /* ------------------------- tabs ------------------------- */
+
+  const panels = {
+    clamp: $('tab-clamp'), stdp: $('tab-stdp'),
+    fi: $('tab-fi'), lab: $('tab-lab'),
+  };
+
+  function setTab(name) {
+    if (!panels[name]) name = 'clamp';
+    SB.tab = name;
+    dom.tabs.forEach((t) => {
+      const on = t.dataset.tab === name;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.classList.toggle('active', on);
+    });
+    Object.keys(panels).forEach((k) => { panels[k].hidden = k !== name; });
+    document.dispatchEvent(new CustomEvent('sb:tab', { detail: name }));
+  }
+  SB.setTab = setTab;
+
+  /* ------------------------- bookmark state ------------------------- */
+
+  SB.register = (name, collector, applier) => {
+    SB.collectors[name] = collector;
+    SB.appliers[name] = applier;
+  };
+
+  function buildState() {
+    const state = { t: SB.tab };
+    Object.keys(SB.collectors).forEach((k) => {
+      try { state[k] = SB.collectors[k](); } catch (err) { /* keep hash valid */ }
+    });
+    return state;
+  }
+  SB.buildState = buildState;
+
+  function pushHash() {
+    try {
+      const hash = N.stateToHash(buildState());
+      window.history.replaceState(null, '', hash);
+      return hash;
+    } catch (err) {
+      return null;
+    }
+  }
+  SB.pushHash = pushHash;
+
+  /* ------------------------- workbench run ------------------------- */
 
   function isVC() {
     return dom.protocol.value === 'vclamp';
@@ -76,6 +130,30 @@
     document.querySelectorAll('[data-proto="cc"]').forEach((el) => { el.hidden = vc; });
     document.querySelectorAll('[data-proto="vc"]').forEach((el) => { el.hidden = !vc; });
   }
+
+  function workbenchState() {
+    return {
+      p: dom.protocol.value,
+      a: num(dom.amp, 10), vh: num(dom.vhold, -65), vc: num(dom.vcmd, -20),
+      s: num(dom.start, 5), d: num(dom.dur, 20), o: num(dom.post, 10),
+      x: num(dom.ttx, 0), e: num(dom.tea, 0),
+    };
+  }
+
+  function applyWorkbenchState(w) {
+    if (!w) return;
+    if (['step', 'ramp', 'vclamp'].includes(w.p)) dom.protocol.value = w.p;
+    if (Number.isFinite(w.a)) dom.amp.value = w.a;
+    if (Number.isFinite(w.vh)) dom.vhold.value = w.vh;
+    if (Number.isFinite(w.vc)) dom.vcmd.value = w.vc;
+    if (Number.isFinite(w.s)) dom.start.value = w.s;
+    if (Number.isFinite(w.d)) dom.dur.value = w.d;
+    if (Number.isFinite(w.o)) dom.post.value = w.o;
+    if (Number.isFinite(w.x)) dom.ttx.value = w.x;
+    if (Number.isFinite(w.e)) dom.tea.value = w.e;
+    syncFields();
+  }
+  SB.register('w', workbenchState, applyWorkbenchState);
 
   function run() {
     const common = {
@@ -103,21 +181,24 @@
         }));
       }
     } catch (err) {
-      last = null;
+      SB.last.trace = null;
       dom.btnCsv.disabled = true;
       dom.statValues.forEach((el) => { el.textContent = '-'; });
       announce('Simulation failed. ' + err.message);
       return;
     }
-    last = tr;
+    SB.last.trace = tr;
     dom.btnCsv.disabled = false;
     draw(tr);
     report(tr);
+    document.dispatchEvent(new CustomEvent('sb:session'));
   }
+  SB.run = run;
 
   function fmt(v, digits) {
     return Number.isFinite(v) ? v.toFixed(digits) : '-';
   }
+  SB.fmt = fmt;
 
   function report(tr) {
     if (isVC()) {
@@ -143,136 +224,6 @@
   }
 
   /* ------------------------- drawing ------------------------- */
-
-  function contextFor(cv) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = cv.clientWidth;
-    const h = cv.clientHeight;
-    if (!w || !h) return null;
-    cv.width = Math.round(w * dpr);
-    cv.height = Math.round(h * dpr);
-    const ctx = cv.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return { ctx, w, h };
-  }
-
-  function extent(series) {
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const ys of series) {
-      for (const y of ys) {
-        if (y < lo) lo = y;
-        if (y > hi) hi = y;
-      }
-    }
-    if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 1; }
-    if (lo === hi) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.08;
-    return [lo - pad, hi + pad];
-  }
-
-  function tickFmt(v) {
-    const a = Math.abs(v);
-    if (a >= 100) return v.toFixed(0);
-    if (a >= 10) return v.toFixed(1);
-    return v.toFixed(2);
-  }
-
-  function plot(cv, series, opts) {
-    const box = contextFor(cv);
-    if (!box) return;
-    const { ctx, w, h } = box;
-    const m = { l: 58, r: 14, t: 10, b: 24 };
-    const t = series[0].x;
-    const tMin = t[0];
-    const tMax = t[t.length - 1];
-    const [yMin, yMax] = extent(series.map((s) => s.y));
-    const xAt = (tv) => m.l + (w - m.l - m.r) * (tv - tMin) / (tMax - tMin || 1);
-    const yAt = (yv) => h - m.b - (h - m.t - m.b) * (yv - yMin) / (yMax - yMin);
-
-    ctx.clearRect(0, 0, w, h);
-    ctx.font = '11px ui-rounded, system-ui, sans-serif';
-
-    if (opts && opts.window) {
-      ctx.fillStyle = COLORS.window;
-      ctx.fillRect(xAt(opts.window[0]), m.t,
-        xAt(opts.window[1]) - xAt(opts.window[0]), h - m.t - m.b);
-    }
-
-    ctx.strokeStyle = COLORS.grid;
-    ctx.lineWidth = 1;
-    ctx.fillStyle = COLORS.text;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    for (let i = 0; i <= 4; i += 1) {
-      const yv = yMin + (yMax - yMin) * i / 4;
-      const y = yAt(yv);
-      ctx.beginPath();
-      ctx.moveTo(m.l, y);
-      ctx.lineTo(w - m.r, y);
-      ctx.stroke();
-      ctx.fillText(tickFmt(yv), m.l - 7, y);
-    }
-
-    if (yMin < 0 && yMax > 0) {
-      ctx.strokeStyle = COLORS.zero;
-      ctx.beginPath();
-      ctx.moveTo(m.l, yAt(0));
-      ctx.lineTo(w - m.r, yAt(0));
-      ctx.stroke();
-    }
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    for (let i = 0; i <= 4; i += 1) {
-      const tv = tMin + (tMax - tMin) * i / 4;
-      ctx.fillText(tickFmt(tv), xAt(tv), h - m.b + 6);
-    }
-
-    if (opts && opts.fillTo !== undefined) {
-      const s = series[0];
-      ctx.beginPath();
-      ctx.moveTo(xAt(t[0]), yAt(opts.fillTo));
-      for (let i = 0; i < t.length; i += 1) ctx.lineTo(xAt(t[i]), yAt(s.y[i]));
-      ctx.lineTo(xAt(t[t.length - 1]), yAt(opts.fillTo));
-      ctx.closePath();
-      ctx.fillStyle = COLORS.stimFill;
-      ctx.fill();
-    }
-
-    for (const s of series) {
-      ctx.beginPath();
-      for (let i = 0; i < s.x.length; i += 1) {
-        const x = xAt(s.x[i]);
-        const y = yAt(s.y[i]);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = s.color;
-      ctx.lineWidth = s.width || 1.6;
-      ctx.stroke();
-    }
-
-    if (opts && opts.dots) {
-      ctx.strokeStyle = COLORS.ina;
-      ctx.lineWidth = 1.6;
-      for (const d of opts.dots) {
-        ctx.beginPath();
-        ctx.arc(xAt(d.x), yAt(d.y), 3.5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-
-    if (opts && opts.ylabel) {
-      ctx.save();
-      ctx.translate(13, m.t + (h - m.t - m.b) / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = COLORS.text;
-      ctx.fillText(opts.ylabel, 0, 0);
-      ctx.restore();
-    }
-  }
 
   function draw(tr) {
     const t = tr.t;
@@ -302,12 +253,13 @@
       });
     }
   }
+  SB.draw = draw;
 
   /* ------------------------- export ------------------------- */
 
   function exportCsv() {
-    if (!last) return;
-    const csv = N.traceToCSV(last);
+    if (!SB.last.trace) return;
+    const csv = N.traceToCSV(SB.last.trace);
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -316,7 +268,7 @@
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    announce('Trace exported as CSV.');
+    announce('Trace exported as CSV. SHA-256 ' + N.checksum(csv).slice(0, 16) + '...');
   }
 
   /* ------------------------- wiring ------------------------- */
@@ -338,9 +290,16 @@
     syncFields();
     run();
   }
+  SB.applyPreset = applyPreset;
 
   dom.presets.forEach((b) => {
     b.addEventListener('click', () => applyPreset(b.dataset.preset));
+  });
+  dom.tabs.forEach((t) => {
+    t.addEventListener('click', () => {
+      setTab(t.dataset.tab);
+      pushHash();
+    });
   });
   dom.protocol.addEventListener('change', () => {
     syncFields();
@@ -349,9 +308,30 @@
   });
   dom.btnRun.addEventListener('click', run);
   dom.btnCsv.addEventListener('click', exportCsv);
-  window.addEventListener('resize', () => { if (last) draw(last); });
+  window.addEventListener('resize', () => { if (SB.last.trace) draw(SB.last.trace); });
 
   syncFields();
-  const hash = window.location.hash.slice(1);
-  applyPreset(PRESETS[hash] ? hash : 'spike');
+  const hash = window.location.hash;
+  const restored = N.stateFromHash(hash);
+  SB.pendingState = restored || null;
+  if (restored) {
+    if (restored.w) applyWorkbenchState(restored.w);
+    Object.keys(SB.appliers).forEach((k) => {
+      if (k !== 'w' && restored[k]) {
+        try { SB.appliers[k](restored[k]); } catch (err) { /* keep loading */ }
+      }
+    });
+    dom.presets.forEach((b) => b.setAttribute('aria-pressed', 'false'));
+    setTab(restored.t);
+    run();
+  } else {
+    const presetName = hash.slice(1);
+    setTab('clamp');
+    applyPreset(PRESETS[presetName] ? presetName : 'spike');
+  }
+  // The view scripts load after this one; defer the ready signal so every
+  // listener is registered before it fires.
+  window.setTimeout(() => {
+    document.dispatchEvent(new CustomEvent('sb:ready'));
+  }, 0);
 }());
