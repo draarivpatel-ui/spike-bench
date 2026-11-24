@@ -1,0 +1,21 @@
+Spike Bench is a neurophysiology workbench in the browser: Hodgkin Huxley current and voltage clamp, an S T D P microcircuit, f I sweeps, phase portraits and S H A 256 verified exports.
+Everything integrates locally in double precision, with deterministic seeds and zero dependencies.
+
+The clamp tab drives the squid axon model with fourth order Runge Kutta integration.
+Six presets cover resting, single spike, train, T T X and T E A channel blocks and voltage clamp.
+The membrane trace draws with its stimulus underneath while the stat rail reports spike count, rate, peak, half width and afterhyperpolarization.
+
+Blocking sodium channels with T T X abolishes the spikes while leak and capacitance remain.
+That is the classic pharmacology result, computed live in the page.
+
+The S T D P sandbox wires up to sixty presynaptic inputs into one leaky integrate and fire neuron.
+Every pre post pairing updates its synapse inside a causal window: early pre spikes potentiate, late ones depress.
+Weight trajectories, the delta t correlation and the raster plot make the learning visible, and a fixed seed reproduces the run bit for bit.
+
+The f I sweep bisects the rheobase and charts firing rate against injected current, with a monotonicity check.
+The phase portrait plots the trajectory against exact nullclines and equilibria for the Izhikevich phenotypes and a reduced Hodgkin Huxley model.
+
+The lab tab exports the session as a canonical J S O N document with a pure JavaScript S H A 256 checksum.
+A bookmark hash restores the whole session, and a seventeen check battery verifies R K 4 convergence, S T D P sign symmetry, rheobase monotonicity and the codecs.
+Three hundred seventeen Node tests pass with zero failures, re verified inside this recording run.
+Spike Bench. Electrophysiology you can replay.

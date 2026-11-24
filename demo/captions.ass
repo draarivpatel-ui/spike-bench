@@ -1,0 +1,30 @@
+[Script Info]
+Title: spike-bench demo captions
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Cap,Helvetica,42,&H00FFFFFF,&H000019FF,&H88141414,&H00000000,-1,0,0,0,100,100,0,0,3,14,0,2,120,120,46,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.52,0:00:14.04,Cap,,0,0,0,,Spike Bench is a neurophysiology workbench in the browser: Hodgkin Huxley current and voltage clamp, an S T D P microcircuit, f I sweeps, phase portraits and S H A 256 verified exports.
+Dialogue: 0,0:00:14.21,0:00:21.50,Cap,,0,0,0,,Everything integrates locally in double precision, with deterministic seeds and zero dependencies.
+Dialogue: 0,0:00:22.12,0:00:28.20,Cap,,0,0,0,,The clamp tab drives the squid axon model with fourth order Runge Kutta integration.
+Dialogue: 0,0:00:28.37,0:00:35.06,Cap,,0,0,0,,Six presets cover resting, single spike, train, T T X and T E A channel blocks and voltage clamp.
+Dialogue: 0,0:00:35.23,0:00:45.68,Cap,,0,0,0,,The membrane trace draws with its stimulus underneath while the stat rail reports spike count, rate, peak, half width and afterhyperpolarization.
+Dialogue: 0,0:00:46.30,0:00:52.87,Cap,,0,0,0,,Blocking sodium channels with T T X abolishes the spikes while leak and capacitance remain.
+Dialogue: 0,0:00:53.04,0:00:57.88,Cap,,0,0,0,,That is the classic pharmacology result, computed live in the page.
+Dialogue: 0,0:00:58.51,0:01:05.39,Cap,,0,0,0,,The S T D P sandbox wires up to sixty presynaptic inputs into one leaky integrate and fire neuron.
+Dialogue: 0,0:01:05.56,0:01:13.72,Cap,,0,0,0,,Every pre post pairing updates its synapse inside a causal window: early pre spikes potentiate, late ones depress.
+Dialogue: 0,0:01:13.89,0:01:23.78,Cap,,0,0,0,,Weight trajectories, the delta t correlation and the raster plot make the learning visible, and a fixed seed reproduces the run bit for bit.
+Dialogue: 0,0:01:24.40,0:01:32.29,Cap,,0,0,0,,The f I sweep bisects the rheobase and charts firing rate against injected current, with a monotonicity check.
+Dialogue: 0,0:01:32.46,0:01:43.06,Cap,,0,0,0,,The phase portrait plots the trajectory against exact nullclines and equilibria for the Izhikevich phenotypes and a reduced Hodgkin Huxley model.
+Dialogue: 0,0:01:43.69,0:01:51.57,Cap,,0,0,0,,The lab tab exports the session as a canonical J S O N document with a pure JavaScript S H A 256 checksum.
+Dialogue: 0,0:01:51.74,0:02:03.34,Cap,,0,0,0,,A bookmark hash restores the whole session, and a seventeen check battery verifies R K 4 convergence, S T D P sign symmetry, rheobase monotonicity and the codecs.
+Dialogue: 0,0:02:03.51,0:02:10.60,Cap,,0,0,0,,Three hundred seventeen Node tests pass with zero failures, re verified inside this recording run.
+Dialogue: 0,0:02:10.77,0:02:14.21,Cap,,0,0,0,,Spike Bench. Electrophysiology you can replay.

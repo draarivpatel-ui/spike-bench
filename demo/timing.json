@@ -1,0 +1,126 @@
+{
+ "voice": "OmniVoice-bf16 (Aariv voice clone)",
+ "seed": 1,
+ "sr": 24000,
+ "lead": 0.6,
+ "gap_sent": 0.3,
+ "gap_para": 0.75,
+ "tail": 1,
+ "total": 135.164,
+ "wav_seconds": 135.164,
+ "words": 297,
+ "sentences": [
+  {
+   "para": 0,
+   "sent": 0,
+   "text": "Spike Bench is a neurophysiology workbench in the browser: Hodgkin Huxley current and voltage clamp, an S T D P microcircuit, f I sweeps, phase portraits and S H A 256 verified exports.",
+   "dur": 13.392,
+   "start": 0.6
+  },
+  {
+   "para": 0,
+   "sent": 1,
+   "text": "Everything integrates locally in double precision, with deterministic seeds and zero dependencies.",
+   "dur": 7.156,
+   "start": 14.292
+  },
+  {
+   "para": 1,
+   "sent": 0,
+   "text": "The clamp tab drives the squid axon model with fourth order Runge Kutta integration.",
+   "dur": 5.955,
+   "start": 22.198
+  },
+  {
+   "para": 1,
+   "sent": 1,
+   "text": "Six presets cover resting, single spike, train, T T X and T E A channel blocks and voltage clamp.",
+   "dur": 6.558,
+   "start": 28.454
+  },
+  {
+   "para": 1,
+   "sent": 2,
+   "text": "The membrane trace draws with its stimulus underneath while the stat rail reports spike count, rate, peak, half width and afterhyperpolarization.",
+   "dur": 10.315,
+   "start": 35.312
+  },
+  {
+   "para": 2,
+   "sent": 0,
+   "text": "Blocking sodium channels with T T X abolishes the spikes while leak and capacitance remain.",
+   "dur": 6.439,
+   "start": 46.377
+  },
+  {
+   "para": 2,
+   "sent": 1,
+   "text": "That is the classic pharmacology result, computed live in the page.",
+   "dur": 4.719,
+   "start": 53.116
+  },
+  {
+   "para": 3,
+   "sent": 0,
+   "text": "The S T D P sandbox wires up to sixty presynaptic inputs into one leaky integrate and fire neuron.",
+   "dur": 6.752,
+   "start": 58.585
+  },
+  {
+   "para": 3,
+   "sent": 1,
+   "text": "Every pre post pairing updates its synapse inside a causal window: early pre spikes potentiate, late ones depress.",
+   "dur": 8.037,
+   "start": 65.637
+  },
+  {
+   "para": 3,
+   "sent": 2,
+   "text": "Weight trajectories, the delta t correlation and the raster plot make the learning visible, and a fixed seed reproduces the run bit for bit.",
+   "dur": 9.759,
+   "start": 73.974
+  },
+  {
+   "para": 4,
+   "sent": 0,
+   "text": "The f I sweep bisects the rheobase and charts firing rate against injected current, with a monotonicity check.",
+   "dur": 7.759,
+   "start": 84.483
+  },
+  {
+   "para": 4,
+   "sent": 1,
+   "text": "The phase portrait plots the trajectory against exact nullclines and equilibria for the Izhikevich phenotypes and a reduced Hodgkin Huxley model.",
+   "dur": 10.473,
+   "start": 92.542
+  },
+  {
+   "para": 5,
+   "sent": 0,
+   "text": "The lab tab exports the session as a canonical J S O N document with a pure JavaScript S H A 256 checksum.",
+   "dur": 7.754,
+   "start": 103.766
+  },
+  {
+   "para": 5,
+   "sent": 1,
+   "text": "A bookmark hash restores the whole session, and a seventeen check battery verifies R K 4 convergence, S T D P sign symmetry, rheobase monotonicity and the codecs.",
+   "dur": 11.475,
+   "start": 111.819
+  },
+  {
+   "para": 5,
+   "sent": 2,
+   "text": "Three hundred seventeen Node tests pass with zero failures, re verified inside this recording run.",
+   "dur": 6.954,
+   "start": 123.594
+  },
+  {
+   "para": 5,
+   "sent": 3,
+   "text": "Spike Bench. Electrophysiology you can replay.",
+   "dur": 3.316,
+   "start": 130.848
+  }
+ ]
+}

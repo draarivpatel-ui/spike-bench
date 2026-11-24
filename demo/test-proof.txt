@@ -1,0 +1,7 @@
+Spike Bench - verification proof
+commit: 4048fed (captured during scripts/record-demo.mjs)
+
+$ node --test test/
+  tests 317, pass 317, fail 0
+$ hark_honesty_and_defect_harness.py --audit <repo>
+  Audited 24 files in spike-bench: 0 violation(s).

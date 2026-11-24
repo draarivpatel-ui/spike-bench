@@ -1,0 +1,63 @@
+1
+00:00:00,520 --> 00:00:14,042
+Spike Bench is a neurophysiology workbench in the browser: Hodgkin Huxley current and voltage clamp, an S T D P microcircuit, f I sweeps, phase portraits and S H A 256 verified exports.
+
+2
+00:00:14,212 --> 00:00:21,498
+Everything integrates locally in double precision, with deterministic seeds and zero dependencies.
+
+3
+00:00:22,118 --> 00:00:28,203
+The clamp tab drives the squid axon model with fourth order Runge Kutta integration.
+
+4
+00:00:28,374 --> 00:00:35,062
+Six presets cover resting, single spike, train, T T X and T E A channel blocks and voltage clamp.
+
+5
+00:00:35,232 --> 00:00:45,677
+The membrane trace draws with its stimulus underneath while the stat rail reports spike count, rate, peak, half width and afterhyperpolarization.
+
+6
+00:00:46,297 --> 00:00:52,866
+Blocking sodium channels with T T X abolishes the spikes while leak and capacitance remain.
+
+7
+00:00:53,036 --> 00:00:57,885
+That is the classic pharmacology result, computed live in the page.
+
+8
+00:00:58,505 --> 00:01:05,387
+The S T D P sandbox wires up to sixty presynaptic inputs into one leaky integrate and fire neuron.
+
+9
+00:01:05,557 --> 00:01:13,724
+Every pre post pairing updates its synapse inside a causal window: early pre spikes potentiate, late ones depress.
+
+10
+00:01:13,894 --> 00:01:23,783
+Weight trajectories, the delta t correlation and the raster plot make the learning visible, and a fixed seed reproduces the run bit for bit.
+
+11
+00:01:24,403 --> 00:01:32,292
+The f I sweep bisects the rheobase and charts firing rate against injected current, with a monotonicity check.
+
+12
+00:01:32,462 --> 00:01:43,065
+The phase portrait plots the trajectory against exact nullclines and equilibria for the Izhikevich phenotypes and a reduced Hodgkin Huxley model.
+
+13
+00:01:43,686 --> 00:01:51,570
+The lab tab exports the session as a canonical J S O N document with a pure JavaScript S H A 256 checksum.
+
+14
+00:01:51,739 --> 00:02:03,344
+A bookmark hash restores the whole session, and a seventeen check battery verifies R K 4 convergence, S T D P sign symmetry, rheobase monotonicity and the codecs.
+
+15
+00:02:03,514 --> 00:02:10,598
+Three hundred seventeen Node tests pass with zero failures, re verified inside this recording run.
+
+16
+00:02:10,768 --> 00:02:14,214
+Spike Bench. Electrophysiology you can replay.
