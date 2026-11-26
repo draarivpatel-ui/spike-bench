@@ -18,15 +18,15 @@
   <main class="page">
     <header class="top">
       <h1>Spike Bench</h1>
-      <nav class="tabs" aria-label="Workbench sections">
-        <button class="tab active" type="button" data-tab="clamp" aria-selected="true">Clamp</button>
-        <button class="tab" type="button" data-tab="stdp" aria-selected="false">STDP Sandbox</button>
-        <button class="tab" type="button" data-tab="fi" aria-selected="false">F-I and Phase</button>
-        <button class="tab" type="button" data-tab="lab" aria-selected="false">Export and Tests</button>
-      </nav>
+      <div class="tabs" role="tablist" aria-label="Workbench sections">
+        <button class="tab active" type="button" role="tab" id="tab-btn-clamp" data-tab="clamp" aria-controls="tab-clamp" aria-selected="true" tabindex="0">Clamp</button>
+        <button class="tab" type="button" role="tab" id="tab-btn-stdp" data-tab="stdp" aria-controls="tab-stdp" aria-selected="false" tabindex="-1">STDP Sandbox</button>
+        <button class="tab" type="button" role="tab" id="tab-btn-fi" data-tab="fi" aria-controls="tab-fi" aria-selected="false" tabindex="-1">F-I and Phase</button>
+        <button class="tab" type="button" role="tab" id="tab-btn-lab" data-tab="lab" aria-controls="tab-lab" aria-selected="false" tabindex="-1">Export and Tests</button>
+      </div>
     </header>
 
-    <section id="tab-clamp" class="bench" aria-label="Clamp workbench">
+    <section id="tab-clamp" class="bench" role="tabpanel" aria-labelledby="tab-btn-clamp" tabindex="0">
       <nav class="presets" aria-label="Preset protocols">
         <button class="preset" type="button" data-preset="rest">Resting</button>
         <button class="preset" type="button" data-preset="spike">Single Spike</button>
@@ -36,7 +36,7 @@
         <button class="preset" type="button" data-preset="vclamp">Voltage Clamp</button>
       </nav>
 
-      <div class="controls" aria-label="Protocol controls">
+      <div class="controls" role="group" aria-label="Protocol controls">
         <label class="field">
           <span>Protocol</span>
           <select id="f-protocol">
@@ -105,8 +105,8 @@
       </div>
     </section>
 
-    <section id="tab-stdp" class="bench" aria-label="STDP learning sandbox" hidden>
-      <div class="controls" aria-label="STDP controls">
+    <section id="tab-stdp" class="bench" role="tabpanel" aria-labelledby="tab-btn-stdp" tabindex="0" hidden>
+      <div class="controls" role="group" aria-label="STDP controls">
         <label class="field">
           <span>Presynaptic drive</span>
           <select id="s-drive">
@@ -178,8 +178,8 @@
       </div>
     </section>
 
-    <section id="tab-fi" class="bench" aria-label="F-I curve and phase plane" hidden>
-      <div class="controls" aria-label="F-I sweep controls">
+    <section id="tab-fi" class="bench" role="tabpanel" aria-labelledby="tab-btn-fi" tabindex="0" hidden>
+      <div class="controls" role="group" aria-label="F-I sweep controls">
         <label class="field">
           <span>Max I, uA/cm&sup2;</span>
           <input id="f-maxI" type="number" step="1" min="1" value="20">
@@ -209,7 +209,7 @@
         <canvas id="fi-curve" height="260" aria-label="F-I tuning curve, rate versus injected current"></canvas>
       </div>
 
-      <div class="controls" aria-label="Phase portrait controls">
+      <div class="controls" role="group" aria-label="Phase portrait controls">
         <label class="field">
           <span>Model</span>
           <select id="p-model">
@@ -251,15 +251,15 @@
       </div>
     </section>
 
-    <section id="tab-lab" class="bench" aria-label="Verified export and self tests" hidden>
-      <div class="controls" aria-label="Export and test actions">
+    <section id="tab-lab" class="bench" role="tabpanel" aria-labelledby="tab-btn-lab" tabindex="0" hidden>
+      <div class="controls" role="group" aria-label="Export and test actions">
         <div class="control-actions">
           <button id="x-bookmark" class="btn" type="button">Bookmark Link</button>
           <button id="x-selftest" class="btn btn-primary" type="button">Run Self-Tests</button>
         </div>
       </div>
 
-      <div id="x-exports" class="controls" hidden aria-label="Verified exports">
+      <div id="x-exports" class="controls" role="group" hidden aria-label="Verified exports">
         <div class="control-actions">
           <button id="x-json" class="btn" type="button" disabled>Session JSON + SHA-256</button>
           <button id="x-csv" class="btn" type="button" disabled>Trace CSV</button>

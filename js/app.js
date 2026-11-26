@@ -86,6 +86,9 @@
       const on = t.dataset.tab === name;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
       t.classList.toggle('active', on);
+      /* Roving tabindex keeps one tab in the tab sequence, as the
+         tablist pattern requires; arrow keys move between tabs. */
+      t.tabIndex = on ? 0 : -1;
     });
     Object.keys(panels).forEach((k) => { panels[k].hidden = k !== name; });
     document.dispatchEvent(new CustomEvent('sb:tab', { detail: name }));
@@ -295,9 +298,23 @@
   dom.presets.forEach((b) => {
     b.addEventListener('click', () => applyPreset(b.dataset.preset));
   });
-  dom.tabs.forEach((t) => {
+  dom.tabs.forEach((t, index) => {
     t.addEventListener('click', () => {
       setTab(t.dataset.tab);
+      pushHash();
+    });
+    t.addEventListener('keydown', (event) => {
+      const last = dom.tabs.length - 1;
+      let target = null;
+      if (event.key === 'ArrowRight') target = index === last ? 0 : index + 1;
+      else if (event.key === 'ArrowLeft') target = index === 0 ? last : index - 1;
+      else if (event.key === 'Home') target = 0;
+      else if (event.key === 'End') target = last;
+      if (target === null) return;
+      event.preventDefault();
+      const next = dom.tabs[target];
+      setTab(next.dataset.tab);
+      next.focus();
       pushHash();
     });
   });
