@@ -47,7 +47,7 @@ Open `index.html` in a browser or visit the live workbench at
 
 ## Tests and audit
 
-The suite covers the engine end to end: 324 tests, all passing.
+The suite covers the engine end to end: 329 tests, all passing.
 
 ```sh
 npm test
