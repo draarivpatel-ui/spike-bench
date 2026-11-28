@@ -4,7 +4,7 @@
   "private": true,
   "description": "Spike Bench, a computational neuroscience workbench. Pure deterministic Hodgkin-Huxley, Izhikevich, LIF and STDP engine plus a browser shell.",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "demo:synth": "node scripts/record-demo.mjs synth",
     "demo:capture": "node scripts/record-demo.mjs capture",
     "demo:check": "node scripts/record-demo.mjs check",
